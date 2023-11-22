@@ -3,19 +3,91 @@ on:
   pull_request:
     branches: [ main, notreal ]
     paths: 
-      - 'docker/Dockerfile.ngen'
-      - 'docker/Dockerfile.ngen-deps'
+      - 'docker/**'
   workflow_dispatch:
 
 jobs:
-  build:
+  changes:
+    runs-on: self-hosted
+    outputs:
+      deps: ${{ steps.changes.outputs.deps }}
+      ngen: ${{ steps.changes.outputs.ngen }}
+      troute: ${{ steps.changes.outputs.troute }}
+      ngiab: ${{ steps.changes.outputs.ngiab }}
+    steps:
+    - uses: actions/checkout@v3
+    - uses: dorny/paths-filter@v2
+      id: changes
+      with:
+        filters: |
+          deps:
+            - 'docker/Dockerfile.ngen-deps'
+          ngen:
+            - 'docker/Dockerfile.ngen'
+          troute:
+            - 'docker/Dockerfile.t-route'
+          ngiab:
+            - 'docker/Dockerfile'        
+
+  deps:
+    #if the ngen-deps dockerfile changes, test its build
+    needs: changes
+    if: ${{ needs.changes.outputs.deps == 'true' }}
+    runs-on: self-hosted
+    # For pull requests, it's not necessary to checkout code
+    permissions:
+      pull-requests: read
+    steps:
+      - name: Build ngen-deps Docker image
+        uses: ./.github/action_templates/build
+        with:
+          image-name: "deps"
+          dockerfile-name: "Dockerfile.ngen-deps"
+
+  ngen:
+    #if ngen or ngen-deps dockerfile has changed, test the ngen build
+    needs: changes
+    if: ${{ needs.changes.outputs.ngen == 'true' || needs.changes.outputs.deps == 'true' }}
     runs-on: self-hosted
     # For pull requests, it's not necessary to checkout code
     permissions:
       pull-requests: read
     steps:
       - name: Build ngen Docker image
-        uses: ./.github/action_templates/build-and-push
+        uses: ./.github/action_templates/build
         with:
           image-name: "ngen"
-          dockerfile-name: "Dockerfile.ngen"      
+          dockerfile-name: "Dockerfile.ngen"
+  
+  troute:
+    #if troute dockerfile or the ngen-deps file has changed, test the troute build
+    needs: changes
+    if: ${{ needs.changes.outputs.troute == 'true' || needs.changes.outputs.deps == 'true' }}
+    runs-on: self-hosted
+    # For pull requests, it's not necessary to checkout code
+    permissions:
+      pull-requests: read
+    steps:
+      - name: Build troute Docker image
+        uses: ./.github/action_templates/build
+        with:
+          image-name: "troute"
+          dockerfile-name: "Dockerfile.t-route"
+
+  ngiab:
+    #if any of the other docker files have changed, test the ngiab build as well
+    needs: changes
+    if: |
+      needs.changes.outputs.ngiab == 'true' || needs.changes.outputs.ngen == 'true' ||
+      needs.changes.outputs.deps == 'true' || needs.changes.outputs.troute == 'true'
+
+    runs-on: self-hosted
+    # For pull requests, it's not necessary to checkout code
+    permissions:
+      pull-requests: read
+    steps:
+      - name: Build ngiab Docker image
+        uses: ./.github/action_templates/build
+        with:
+          image-name: "ngiab"
+          dockerfile-name: "Dockerfile.ngiab"
